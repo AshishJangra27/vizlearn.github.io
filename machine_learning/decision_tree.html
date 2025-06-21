@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Decision Tree Explainer</title>
+    <style>
+        /* Define CSS variables for colors and sizes */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --accent-color: #2f8d46; /* Green */
+            --border-color: #cccccc;
+            --leaf-color: #e8f5e9; /* Light green for leaf nodes */
+            --active-border-color: #2f8d46; /* Border for active node */
+            --error-color: #d32f2f; /* Red for errors/warnings */
+        }
+
+        /* Basic reset for all elements */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Full height and width for html and body, hidden overflow */
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 16px; /* Base font size for rem calculations */
+        }
+
+        /* Flexbox for body to stack main content vertically */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content horizontally */
+            justify-content: center; /* Center content vertically */
+            padding: 2vh 2vw; /* Add some padding around the main container */
+        }
+
+        /* Main content area, takes available space */
+        main {
+            display: flex;
+            flex-direction: column; /* Stack panels and controls vertically */
+            flex-grow: 1; /* Allow main to grow and take available height */
+            width: 100%; /* Full width */
+            max-width: 1200px; /* Max width for desktop view */
+            height: 100%; /* Take full height */
+            border: 1px solid var(--border-color); /* Add a subtle border around the main content */
+            border-radius: 8px; /* Rounded corners for the main container */
+            overflow: hidden; /* Hide overflow from rounded corners */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); /* Subtle shadow */
+        }
+
+        /* Top control container is now removed or repurposed, so no explicit styles for it here */
+        #top-controls-container {
+            display: none; /* Hide the top container as buttons are moved */
+        }
+
+        /* Container for left and right panels */
+        #panels-container {
+            display: flex;
+            flex-grow: 1; /* Allows panels to take up available height */
+            width: 100%;
+        }
+
+        /* Left panel for data and controls */
+        #left-panel {
+            width: 38%; /* Fixed width for left panel */
+            padding: 2vh 2vw; /* Vertical and horizontal padding */
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color); /* Separator from right panel */
+            background-color: #f9f9f9; /* Light background for left panel */
+        }
+
+        /* Right panel for tree visualization */
+        #right-panel {
+            width: 62%; /* Remaining width for right panel */
+            padding: 2vh 1vw; /* Padding for the tree visualization */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden; /* Hide overflow from SVG elements */
+        }
+
+        /* Section header styling */
+        h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5vh;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1vh;
+            color: var(--accent-color); /* Accent color for headers */
+            font-weight: 600; /* Slightly bolder */
+        }
+
+        /* General panel section spacing */
+        .panel-section {
+            margin-bottom: 2vh; /* Spacing between sections */
+        }
+
+        /* Data display container styling */
+        #data-display-container {
+            flex-grow: 1; /* Allow data display to take available height */
+            overflow-y: auto; /* Enable vertical scrolling if content overflows */
+            border: 1px solid var(--border-color);
+            border-radius: 5px; /* Rounded corners */
+            margin-bottom: 2vh; /* Space below data table */
+        }
+        
+        /* Data table styling */
+        #data-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed; /* Ensures columns have fixed width, prevents horizontal overflow */
+        }
+
+        /* Table header and data cell styling */
+        #data-table th, #data-table td {
+            border: 1px solid var(--border-color);
+            padding: 0.3em 0.4em; /* Further reduced padding using em */
+            text-align: left;
+            word-wrap: break-word; /* Wraps long words */
+            font-size: 0.6rem; /* Even smaller font size */
+        }
+
+        /* Sticky header for data table */
+        #data-table th {
+            background-color: #e0e0e0;
+            position: sticky;
+            top: 0;
+            z-index: 1; /* Ensure header stays on top of scrolling content */
+            font-size: 0.65rem; /* Slightly larger for headers than cells */
+        }
+
+        /* Container for attribute buttons and explanation area at the bottom */
+        #bottom-controls-container {
+            width: 100%;
+            padding: 2vh 2vw;
+            border-top: 1px solid var(--border-color);
+            background-color: #f9f9f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center contents */
+            flex-shrink: 0; /* Prevent shrinking */
+        }
+
+        /* Container for all interactive buttons at the bottom */
+        #all-buttons-container {
+            display: flex;
+            flex-wrap: wrap; /* Allow buttons to wrap to next line if needed */
+            justify-content: center; /* Center all buttons */
+            margin-bottom: 1vh;
+            gap: 10px; /* Space between attribute buttons */
+            align-items: center; /* Align items vertically */
+        }
+
+        /* Styling for the divider between button groups */
+        .button-divider {
+            height: 30px; /* Height of the line */
+            width: 1px; /* Thickness of the line */
+            background-color: var(--border-color);
+            margin: 0 15px; /* Spacing around the divider */
+        }
+
+        /* Button styling for all buttons at the bottom */
+        #all-buttons-container button {
+            background-color: var(--bg-color);
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 0.8em 1.5em; /* Adjusted to em units for padding */
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.95rem; /* Keep rem for base font size */
+            transition: all 0.2s ease;
+            border-radius: 5px; /* Rounded buttons */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Subtle shadow for buttons */
+        }
+        
+        /* Hover effects for buttons */
+        #all-buttons-container button:hover {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* Enhanced shadow on hover */
+        }
+
+        /* Disabled button styling */
+        #all-buttons-container button:disabled {
+            background-color: #f0f0f0;
+            color: #aaa;
+            border-color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Explanation area styling */
+        #explanation-area {
+            min-height: 8vh; /* Increased height for more text */
+            padding: 1.5vh;
+            border: 1px dashed var(--accent-color); /* Dashed border with accent color */
+            border-radius: 5px;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background-color: #fcfcfc; /* Slightly off-white background */
+            line-height: 1.4; /* Better readability */
+            font-weight: 500;
+            color: #444;
+            width: 100%; /* Take full width of its container */
+        }
+
+        /* SVG for tree visualization */
+        #tree-visualization {
+            width: 100%;
+            height: 100%;
+            display: block; /* Remove extra space below SVG */
+        }
+
+        /* Styling for nodes within SVG */
+        #tree-visualization circle {
+            /* These attributes are set dynamically in JS for positions and colors */
+        }
+        #tree-visualization text {
+            font-family: 'Inter', sans-serif;
+            user-select: none; /* Prevent text selection on nodes */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            body {
+                padding: 1vh 1vw; /* Less padding on mobile */
+            }
+
+            #panels-container {
+                flex-direction: column; /* Stack panels vertically on smaller screens */
+                height: auto; /* Auto height to allow scrolling */
+                overflow-y: auto; /* Enable scrolling for the entire panels area */
+            }
+
+            #left-panel, #right-panel {
+                width: 100%; /* Full width for both panels */
+                border-right: none;
+                border-bottom: 1px solid var(--border-color); /* Separator when stacked */
+                padding: 2vh 4vw; /* More padding on mobile */
+            }
+
+            #right-panel {
+                min-height: 50vh; /* Ensure tree visualization has enough space */
+            }
+
+            #data-table th, #data-table td {
+                padding: 0.5em 1em; /* Adjust padding for smaller screens */
+                font-size: 0.55rem; /* Even smaller font on mobile */
+            }
+
+            h2 {
+                font-size: 1rem;
+            }
+
+            #all-buttons-container button {
+                padding: 0.7em 1.2em;
+                font-size: 0.8rem;
+            }
+            #all-buttons-container {
+                gap: 8px; /* Smaller gap on mobile */
+            }
+
+            .button-divider {
+                height: 25px; /* Smaller divider on mobile */
+                margin: 0 10px;
+            }
+
+            #explanation-area {
+                font-size: 0.9rem;
+                min-height: 10vh; /* More height for explanations on mobile */
+            }
+
+            #bottom-controls-container {
+                padding: 1.5vh 2vw;
+            }
+        }
+    </style>
+    <!-- Inter font for better aesthetics -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main>
+        <!-- Top control buttons (now hidden, as buttons are moved to bottom) -->
+        <div id="top-controls-container">
+            <!-- Buttons previously here are now moved to #bottom-controls-container -->
+        </div>
+
+        <div id="panels-container">
+            <aside id="left-panel">
+                <div class="panel-section" style="flex-grow: 1; display: flex; flex-direction: column;">
+                    <h2 id="data-title">Current Data Subset (Root Node)</h2>
+                    <div id="data-display-container">
+                        <table id="data-table">
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </aside>
+
+            <section id="right-panel">
+                <svg id="tree-visualization"></svg>
+            </section>
+        </div>
+
+        <!-- Bottom controls (all interactive buttons and explanation) -->
+        <div id="bottom-controls-container">
+            <div class="panel-section" style="width: 100%;">
+                <h2>Tree Controls & Attribute Selection:</h2>
+                <div id="all-buttons-container">
+                    <!-- Buttons will be dynamically inserted here by renderControls -->
+                </div>
+            </div>
+            
+            <div id="explanation-area">
+                Current Data: This table shows the data for the currently selected node. Click any node in the tree to view its data.
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DATA & CONFIG ---
+            // The dataset for building the decision tree. Reduced to 10 rows.
+            const fullDataset = [
+                { id: 1, outlook: 'Sunny', temp: 'Hot', humidity: 'High', wind: 'Weak', play: 'No' },
+                { id: 2, outlook: 'Sunny', temp: 'Hot', humidity: 'High', wind: 'Strong', play: 'No' },
+                { id: 3, outlook: 'Overcast', temp: 'Hot', humidity: 'High', wind: 'Weak', play: 'Yes' },
+                { id: 4, outlook: 'Rain', temp: 'Mild', humidity: 'High', wind: 'Weak', play: 'Yes' },
+                { id: 5, outlook: 'Rain', temp: 'Cool', humidity: 'Normal', wind: 'Weak', play: 'Yes' },
+                { id: 6, outlook: 'Rain', temp: 'Cool', humidity: 'Normal', wind: 'Strong', play: 'No' },
+                { id: 7, outlook: 'Overcast', temp: 'Cool', humidity: 'Normal', wind: 'Strong', play: 'Yes' },
+                { id: 8, outlook: 'Sunny', temp: 'Mild', humidity: 'High', wind: 'Weak', play: 'No' },
+                { id: 9, outlook: 'Sunny', temp: 'Cool', humidity: 'Normal', wind: 'Weak', play: 'Yes' },
+                { id: 10, outlook: 'Rain', temp: 'Mild', humidity: 'Normal', wind: 'Weak', play: 'Yes' }
+            ];
+            // Attributes that can be used for splitting the data
+            const attributes = ['outlook', 'temp', 'humidity', 'wind'];
+            // The target attribute we are trying to predict
+            const targetAttribute = 'play';
+            // Visual dimensions for tree nodes in SVG (now using radius for circles)
+            const nodeRadius = 45; // Increased radius for circular nodes
+            const nodeDiameter = nodeRadius * 2;
+            const nodeGap = { x: 40, y: 80 }; // Increased gap for larger nodes
+
+            // --- DOM ELEMENTS ---
+            const dataTitle = document.getElementById('data-title');
+            const dataTableHead = document.querySelector('#data-table thead');
+            const dataTableBody = document.querySelector('#data-table tbody');
+            const allButtonsContainer = document.getElementById('all-buttons-container'); // New container for all buttons
+            const explanationArea = document.getElementById('explanation-area');
+            const treeSvg = document.getElementById('tree-visualization');
+            
+            // Declare buttons here, but they will be created and assigned in renderControls
+            let resetButton;
+            let nextStepButton;
+
+            // --- STATE ---
+            let state; // Holds the current state of the decision tree and active node
+            let autoRunInterval = null; // Used to manage the auto-run feature (not used for button, but for internal logic if re-added)
+
+            /**
+             * Initializes or resets the entire decision tree builder.
+             * Sets up the initial root node and renders the UI.
+             */
+            function initialize() {
+                // Clear any ongoing auto-run intervals (defensive, though button is removed)
+                if (autoRunInterval) clearInterval(autoRunInterval);
+                autoRunInterval = null;
+
+                // Define initial state for the tree
+                state = {
+                    tree: {
+                        'node-0': { // The root node
+                            id: 'node-0',
+                            indices: Array.from({ length: fullDataset.length }, (_, i) => i), // All data indices
+                            parent: null, // No parent for root
+                            children: [], // No children initially
+                            splitOn: null, // No attribute split yet
+                            splitValue: 'Root', // Label for the root node
+                            depth: 0, // Depth 0 for root
+                            isLeaf: false, // Not a leaf yet
+                            prediction: null // No prediction yet
+                        }
+                    },
+                    nextNodeId: 1, // Counter for unique node IDs
+                    activeNodeId: 'node-0', // The node currently being focused for splitting or viewing
+                    selectedNodeIdForDisplay: 'node-0', // The node whose data is currently displayed in the table
+                    usedAttributes: {} // Keep track of attributes used in paths (not currently used for display but good for logic)
+                };
+
+                // Calculate initial purity and check if root is a leaf (unlikely with diverse data)
+                calculatePurityAndLeafStatus(state.tree['node-0']);
+                // Render all UI components based on the initial state
+                renderAll();
+                // Set initial explanation text
+                updateExplanation('Current Data: This table shows the data for the currently selected node. Click any node in the tree to view its data.');
+            }
+            
+            // --- CORE LOGIC ---
+
+            /**
+             * Calculates the purity of a subset of data.
+             * Purity means all instances have the same value for the target attribute.
+             * @param {number[]} indices - Array of indices representing the data subset.
+             * @returns {{pure: boolean, prediction: string, counts?: object}} Object indicating purity,
+             * the majority prediction, and counts of each outcome.
+             */
+            function getPurity(indices) {
+                if (indices.length === 0) return { pure: true, prediction: 'N/A' }; // Empty set is considered pure
+                const counts = indices.reduce((acc, index) => {
+                    const outcome = fullDataset[index][targetAttribute];
+                    acc[outcome] = (acc[outcome] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                const outcomes = Object.keys(counts);
+                if (outcomes.length === 1) {
+                    return { pure: true, prediction: outcomes[0] }; // Only one outcome, so it's pure
+                }
+                // Find the majority class for prediction if not pure
+                const prediction = outcomes.reduce((a, b) => counts[a] > counts[b] ? a : b);
+                return { pure: false, prediction, counts };
+            }
+
+            /**
+             * Updates a node's `isLeaf` status and `prediction` based on its data purity.
+             * @param {object} node - The node object to update.
+             */
+            function calculatePurityAndLeafStatus(node) {
+                const { pure, prediction } = getPurity(node.indices);
+                node.isLeaf = pure;
+                node.prediction = prediction;
+            }
+
+            /**
+             * Determines which attributes are still available for splitting given a node's path from the root.
+             * An attribute is unavailable if it has already been used to split an ancestor node.
+             * @param {string} nodeId - The ID of the current node.
+             * @returns {string[]} An array of available attribute names.
+             */
+            function getAvailableAttributes(nodeId) {
+                const pathAttributes = new Set();
+                let current = state.tree[nodeId];
+                while(current && current.parent !== null) {
+                    // Add the attribute used to split the parent to the set of used attributes
+                    if (state.tree[current.parent].splitOn) {
+                        pathAttributes.add(state.tree[current.parent].splitOn);
+                    }
+                    current = state.tree[current.parent];
+                }
+                // Filter out attributes that have been used in the current node's ancestry
+                return attributes.filter(attr => !pathAttributes.has(attr));
+            }
+            
+            /**
+             * Handles the action of splitting the active node by a chosen attribute.
+             * Creates child nodes for each unique value of the chosen attribute.
+             * @param {string} attribute - The attribute to split on.
+             */
+            function handleSplit(attribute) {
+                const activeNode = state.tree[state.activeNodeId];
+                // Prevent splitting if node is already a leaf or already split
+                if (!activeNode || activeNode.isLeaf || activeNode.children.length > 0) {
+                    updateExplanation(`Node for '${activeNode.splitValue}' cannot be split further.`);
+                    return;
+                }
+
+                // Group data indices by the value of the chosen attribute
+                const groups = activeNode.indices.reduce((acc, index) => {
+                    const value = fullDataset[index][attribute];
+                    if (!acc[value]) acc[value] = [];
+                    acc[value].push(index);
+                    return acc;
+                }, {});
+
+                // Mark the active node as split on this attribute
+                activeNode.splitOn = attribute;
+                
+                // Create new child nodes for each group
+                Object.entries(groups).forEach(([value, indices]) => {
+                    const newNodeId = `node-${state.nextNodeId++}`;
+                    const newNode = {
+                        id: newNodeId,
+                        indices: indices, // Data subset for this new node
+                        parent: activeNode.id,
+                        children: [],
+                        splitOn: null,
+                        splitValue: value, // The value of the attribute that led to this node
+                        depth: activeNode.depth + 1,
+                    };
+                    calculatePurityAndLeafStatus(newNode); // Determine if the new node is a leaf
+                    state.tree[newNodeId] = newNode; // Add to the tree structure
+                    activeNode.children.push(newNodeId); // Link to parent
+                });
+
+                // Find the next node that needs splitting
+                state.activeNodeId = findNextActiveNode();
+                state.selectedNodeIdForDisplay = state.activeNodeId || 'node-0'; // Update display node
+                renderAll(); // Re-render the UI
+                
+                // Update explanation based on the split outcome
+                let splitExplanation = `The node was split on '${attribute}'. This created child nodes for each value of '${attribute}'. `;
+                if (state.activeNodeId) {
+                    const nextActiveNode = state.tree[state.activeNodeId];
+                    const { pure: nextNodePure, prediction: nextNodePrediction, counts: nextNodeCounts } = getPurity(nextActiveNode.indices);
+                    // Fixed: Ensured nextNodeCounts is defined before accessing its properties
+                    splitExplanation += `Now focusing on the node for '${nextActiveNode.splitValue}'. Its data is [${nextNodeCounts ? `${nextNodeCounts.Yes||0}Y, ${nextNodeCounts.No||0}N` : 'Pure'}]. ${nextNodePure ? `This node is now a leaf, predicting '${nextNodePrediction}'.` : `It still needs to be split.`}`;
+                } else {
+                    splitExplanation += 'All paths are now pure or have no more attributes to split on. The tree is complete!';
+                }
+                updateExplanation(splitExplanation);
+            }
+
+            /**
+             * Finds the next node in the tree that is not a leaf and has not yet been split.
+             * This determines the "active" node for the next interaction.
+             * @returns {string|null} The ID of the next active node, or null if all nodes are leaves/split.
+             */
+            function findNextActiveNode() {
+                // Perform a Breadth-First Search (BFS) to find the next active node
+                const queue = ['node-0'];
+                const visited = new Set();
+
+                while (queue.length > 0) {
+                    const nodeId = queue.shift();
+                    if (visited.has(nodeId)) continue;
+                    visited.add(nodeId);
+
+                    const node = state.tree[nodeId];
+
+                    // If a node is not a leaf and hasn't been split yet, it's the next active node
+                    if (!node.isLeaf && node.children.length === 0) {
+                        return nodeId;
+                    }
+
+                    // Add children to the queue for further exploration
+                    node.children.forEach(childId => {
+                        if (!visited.has(childId)) {
+                            queue.push(childId);
+                        }
+                    });
+                }
+                return null; // No unsplit non-leaf nodes found
+            }
+
+            /**
+             * Finds the "best" attribute to split the current active node on,
+             * based on a simple purity score (maximizing the number of majority class instances).
+             * This is a simplified impurity measure, not true Information Gain or Gini.
+             * @returns {string|null} The name of the best attribute, or null if no split is possible.
+             */
+            function findBestSplit() {
+                const activeNode = state.tree[state.activeNodeId];
+                if (!activeNode || activeNode.isLeaf || activeNode.children.length > 0) return null; // No need to split
+
+                const availableAttrs = getAvailableAttributes(activeNode.id);
+                if(availableAttrs.length === 0) {
+                    // If no attributes left, this node must become a leaf
+                    activeNode.isLeaf = true;
+                    updateExplanation(`Node for '${activeNode.splitValue}' became a leaf because there are no more attributes to split on.`);
+                    return null;
+                }
+
+                let bestSplit = { attribute: null, score: -1 }; // Higher score is better
+
+                // Iterate through available attributes to find the best one
+                for (const attr of availableAttrs) {
+                    const groups = activeNode.indices.reduce((acc, index) => {
+                        const value = fullDataset[index][attr];
+                        if (!acc[value]) acc[value] = [];
+                        acc[value].push(index);
+                        return acc;
+                    }, {});
+
+                    let weightedPurity = 0;
+                    Object.values(groups).forEach(indices => {
+                        const { counts } = getPurity(indices);
+                        if (!counts) { // Should not happen with valid data, but for safety
+                            weightedPurity += indices.length;
+                            return;
+                        }
+                        // The "score" here is a simple sum of majority instances in each group,
+                        // normalized by the total count. Maximize this value.
+                        const majority = Math.max(...Object.values(counts));
+                        weightedPurity += majority;
+                    });
+                    
+                    // The score is the sum of majority instances divided by the total instances in the current node
+                    const score = weightedPurity / activeNode.indices.length;
+
+                    // Update best split if current attribute gives a higher score
+                    if (score > bestSplit.score) {
+                        bestSplit = { attribute: attr, score };
+                    }
+                }
+                return bestSplit.attribute;
+            }
+
+            // --- RENDERING ---
+
+            /**
+             * Renders all dynamic UI components: data table, control buttons, and tree visualization.
+             */
+            function renderAll() {
+                renderDataTable();
+                renderControls();
+                renderTree();
+            }
+
+            /**
+             * Renders the data table in the left panel, showing the subset of data
+             * associated with the current active node.
+             */
+            function renderDataTable() {
+                // Use selectedNodeIdForDisplay to determine which node's data to show
+                const nodeToDisplay = state.tree[state.selectedNodeIdForDisplay];
+                const titleText = nodeToDisplay.splitValue === 'Root' ? 'Root Node' : `Branch for '${state.tree[nodeToDisplay.parent].splitOn}' = '${nodeToDisplay.splitValue}'`;
+                dataTitle.textContent = `Current Data Subset (${titleText})`;
+
+                // Clear previous table content
+                dataTableHead.innerHTML = '';
+                dataTableBody.innerHTML = '';
+                
+                // Create table headers from the first data item's keys
+                const headers = Object.keys(fullDataset[0]);
+                const headerRow = document.createElement('tr');
+                headers.forEach(h => {
+                    const th = document.createElement('th');
+                    th.textContent = h.charAt(0).toUpperCase() + h.slice(1); // Capitalize header
+                    headerRow.appendChild(th);
+                });
+                dataTableHead.appendChild(headerRow);
+
+                // Populate table body with data specific to the current node
+                // Note: fullDataset is already 10 rows, so slice(0, 10) won't truncate if all data is displayed.
+                const displayIndices = nodeToDisplay.indices.slice(0, 10); 
+                if (displayIndices.length > 0) {
+                    displayIndices.forEach(index => {
+                        const rowData = fullDataset[index];
+                        const row = document.createElement('tr');
+                        headers.forEach(h => {
+                            const td = document.createElement('td');
+                            td.textContent = rowData[h];
+                            // Highlight target attribute column based on its value
+                            if (h === targetAttribute) {
+                                td.style.backgroundColor = rowData[h] === 'Yes' ? 'var(--leaf-color)' : '#ffebee'; /* Light red for 'No' */
+                                td.style.fontWeight = 'bold';
+                            }
+                            row.appendChild(td);
+                        });
+                        dataTableBody.appendChild(row);
+                    });
+                     // Add a row to indicate truncated data if applicable
+                    if (nodeToDisplay.indices.length > 10) {
+                        const moreRowsInfo = document.createElement('tr');
+                        moreRowsInfo.innerHTML = `<td colspan="${headers.length}" style="text-align: center; padding: 0.5vh; font-size: 0.75rem; color: #555;">... showing 10 of ${nodeToDisplay.indices.length} rows ...</td>`;
+                        dataTableBody.appendChild(moreRowsInfo);
+                    }
+                } else {
+                    const emptyRow = document.createElement('tr');
+                    emptyRow.innerHTML = `<td colspan="${headers.length}" style="text-align: center; padding: 1vh; color: #777;">No data available for this node.</td>`;
+                    dataTableBody.appendChild(emptyRow);
+                }
+
+
+                // Add a summary row if the node is a leaf
+                if (nodeToDisplay.isLeaf) {
+                    const summaryRow = document.createElement('tr');
+                    summaryRow.style.backgroundColor = 'var(--leaf-color)';
+                    summaryRow.style.fontWeight = 'bold';
+                    summaryRow.innerHTML = `<td colspan="${headers.length}" style="text-align: center; padding: 1vh;">
+                        This is a PURE node! All '${targetAttribute}' values are '${nodeToDisplay.prediction}'.
+                        This node becomes a leaf and predicts '${nodeToDisplay.prediction}'.
+                    </td>`;
+                    dataTableBody.appendChild(summaryRow);
+                } else {
+                    const { counts } = getPurity(nodeToDisplay.indices);
+                    if (counts) {
+                        const summaryRow = document.createElement('tr');
+                        summaryRow.style.backgroundColor = '#f0f0f0';
+                        summaryRow.innerHTML = `<td colspan="${headers.length}" style="text-align: center; padding: 1vh;">
+                            Data Purity: Yes: ${counts.Yes || 0}, No: ${counts.No || 0}. This node is NOT pure and requires further splitting.
+                        </td>`;
+                        dataTableBody.appendChild(summaryRow);
+                    }
+                }
+            }
+
+            /**
+             * Renders and manages the state of the control buttons (attribute buttons, Reset, Next Step).
+             */
+            function renderControls() {
+                // Clear previous buttons from the all-buttons-container
+                allButtonsContainer.innerHTML = ''; 
+
+                const isComplete = state.activeNodeId === null; // Check if tree building is complete
+                const activeNode = state.tree[state.activeNodeId];
+                const availableAttrs = isComplete ? [] : getAvailableAttributes(activeNode.id);
+
+                // Create Reset button
+                resetButton = document.createElement('button');
+                resetButton.id = 'reset-btn';
+                resetButton.textContent = 'Reset';
+                resetButton.disabled = false; // Always allow reset
+                resetButton.addEventListener('click', () => {
+                    initialize();
+                    updateExplanation('The tree has been reset. You can start building again from the Root node. Choose an attribute to split or use "Next Step".');
+                });
+                allButtonsContainer.appendChild(resetButton);
+
+                // Create Next Step button
+                nextStepButton = document.createElement('button');
+                nextStepButton.id = 'next-step-btn';
+                nextStepButton.textContent = 'Next Step';
+                nextStepButton.disabled = isComplete; // nextStepButton will trigger the logic to determine if activeNodeId becomes null
+                nextStepButton.addEventListener('click', () => {
+                    const activeNode = state.tree[state.activeNodeId];
+                    if (!activeNode) {
+                        updateExplanation('The tree is already complete! No more steps to take. Click "Reset" to start over.');
+                        return;
+                    }
+
+                    if (activeNode.isLeaf) {
+                        state.activeNodeId = findNextActiveNode();
+                        state.selectedNodeIdForDisplay = state.activeNodeId || 'node-0';
+                        renderAll();
+                        if (state.activeNodeId) {
+                            const nextActiveNode = state.tree[state.activeNodeId];
+                            const { counts } = getPurity(nextActiveNode.indices);
+                            updateExplanation(`The previous node for '${activeNode.splitValue}' was a leaf. Now focusing on node for '${nextActiveNode.splitValue}' with data [${counts ? `${counts.Yes||0}Y, ${counts.No||0}N` : 'Pure'}]. Choose an attribute or click "Next Step".`);
+                        } else {
+                            updateExplanation('All paths are now pure or have no more attributes to split on. The tree is complete!');
+                        }
+                        return;
+                    }
+
+                    const bestAttr = findBestSplit();
+                    if (bestAttr) {
+                        handleSplit(bestAttr);
+                    } else {
+                        state.activeNodeId = findNextActiveNode();
+                        state.selectedNodeIdForDisplay = state.activeNodeId || 'node-0';
+                        renderAll();
+                        if (state.activeNodeId === null) {
+                            updateExplanation('The tree is complete! All nodes are pure or cannot be split further.');
+                        } else {
+                            const nextActiveNode = state.tree[state.activeNodeId];
+                            const { counts } = getPurity(nextActiveNode.indices);
+                            updateExplanation(`The node for '${activeNode.splitValue}' became a leaf. Now focusing on node for '${nextActiveNode.splitValue}' with data [${counts ? `${counts.Yes||0}Y, ${counts.No||0}N` : 'Pure'}].`);
+                        }
+                    }
+                });
+                allButtonsContainer.appendChild(nextStepButton);
+
+                // Add the divider
+                const divider = document.createElement('div');
+                divider.classList.add('button-divider');
+                allButtonsContainer.appendChild(divider);
+
+                // Display attribute buttons only if there's an active node that can be split
+                if (!isComplete && activeNode && !activeNode.isLeaf && availableAttrs.length > 0) {
+                     // Create a button for each available attribute
+                     availableAttrs.forEach(attr => {
+                        const button = document.createElement('button');
+                        button.textContent = `Split by ${attr}`;
+                        button.onclick = () => handleSplit(attr); // Attach click handler
+                        allButtonsContainer.appendChild(button);
+                    });
+                } else if (!isComplete && activeNode && activeNode.isLeaf) {
+                    const textNode = document.createTextNode('This node is pure and is a leaf. No further splits needed here.');
+                    const emElement = document.createElement('em');
+                    emElement.appendChild(textNode);
+                    allButtonsContainer.appendChild(emElement);
+                }
+                else if (!isComplete && activeNode && availableAttrs.length === 0 && !activeNode.isLeaf) {
+                    const textNode = document.createTextNode('No more attributes to split on for this node. It will become a leaf.');
+                    const emElement = document.createElement('em');
+                    emElement.appendChild(textNode);
+                    allButtonsContainer.appendChild(emElement);
+                }
+                else {
+                    const textNode = document.createTextNode('Tree building complete! Reset to start over.');
+                    const emElement = document.createElement('em');
+                    emElement.appendChild(textNode);
+                    allButtonsContainer.appendChild(emElement);
+                }
+            }
+            
+            /**
+             * Renders the decision tree visualization using SVG elements.
+             * Draws nodes, edges, and labels.
+             */
+            function renderTree() {
+                treeSvg.innerHTML = ''; // Clear previous SVG content
+                const positions = calculateNodePositions(); // Get calculated positions for all nodes
+                
+                // Render Edges (lines and labels) first, so nodes appear on top
+                Object.values(state.tree).forEach(node => {
+                    if (node.parent !== null) { // Only draw edges for non-root nodes
+                        const parentPos = positions[node.parent];
+                        const childPos = positions[node.id];
+                        
+                        // Draw the line connecting parent to child
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        // For circular nodes, lines should connect to the edge of the circle, not the center
+                        // This calculation is more complex. For simplicity, we'll keep connecting to centers
+                        // but adjust the start/end points to simulate connecting to the circle edge.
+                        // Or, calculate the intersection point of the line between centers and the circle's perimeter.
+                        // For a quick fix, let's connect to the center for now and visually it will be acceptable.
+                        line.setAttribute('x1', parentPos.x);
+                        line.setAttribute('y1', parentPos.y + nodeRadius); // Start from bottom of parent circle
+                        line.setAttribute('x2', childPos.x);
+                        line.setAttribute('y2', childPos.y - nodeRadius); // End at top of child circle
+                        line.setAttribute('stroke', 'var(--border-color)');
+                        line.setAttribute('stroke-width', 2);
+                        treeSvg.appendChild(line);
+
+                        // Add text label for the split value on the edge
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.setAttribute('x', (parentPos.x + childPos.x) / 2);
+                        text.setAttribute('y', (parentPos.y + childPos.y) / 2 - 5); // Position slightly above midpoint
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('font-size', '12px');
+                        text.setAttribute('fill', 'var(--text-color)');
+                        text.textContent = node.splitValue; // The value that led to this branch
+                        treeSvg.appendChild(text);
+                    }
+                });
+
+                // Render Nodes (circles and text)
+                Object.values(positions).forEach(({ x, y, id }) => {
+                    const node = state.tree[id];
+                    // Group elements for each node for easier positioning
+                    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    g.setAttribute('transform', `translate(${x}, ${y})`); // Translate to the center of the node
+                    g.style.cursor = 'pointer'; // Indicate it's clickable
+                    g.addEventListener('click', (event) => {
+                        event.stopPropagation(); // Prevent click from bubbling up if svg has other listeners
+                        state.selectedNodeIdForDisplay = node.id; // Set this node as the one to display data for
+                        renderAll(); // Re-render everything
+                        const { counts } = getPurity(node.indices);
+                        const nodeType = node.isLeaf ? 'a LEAF node' : 'an internal node';
+                        // Fixed: Ensured counts is defined before accessing its properties
+                        updateExplanation(`You clicked on node for '${node.splitValue}'. This is ${nodeType}. It contains [${counts ? `${counts.Yes||0}Y, ${counts.No||0}N` : 'Pure'}] data points. ${node.isLeaf ? `It predicts '${node.prediction}'.` : node.id === state.activeNodeId ? 'You can split this node using an attribute below.' : 'This node is not the active node, but you can click "Next Step" to proceed or "Auto-Run".'}`);
+                    });
+
+
+                    // Draw the node circle
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', 0); // Center relative to g's translation point
+                    circle.setAttribute('cy', 0); // Center relative to g's translation point
+                    circle.setAttribute('r', nodeRadius);
+                    // Highlight active node and currently selected node for display
+                    let strokeColor = 'var(--text-color)';
+                    let strokeWidth = 1.5;
+                    if (id === state.activeNodeId) {
+                        strokeColor = 'var(--active-border-color)';
+                        strokeWidth = 3;
+                    } else if (id === state.selectedNodeIdForDisplay) {
+                        strokeColor = 'orange'; // Highlight selected node
+                        strokeWidth = 2;
+                    }
+                    circle.setAttribute('stroke', strokeColor);
+                    circle.setAttribute('stroke-width', strokeWidth);
+                    circle.setAttribute('fill', node.isLeaf ? 'var(--leaf-color)' : 'var(--bg-color)');
+
+                    // Prepare text lines for node content
+                    const textLines = [];
+                    if (node.isLeaf) {
+                        textLines.push(`Predict:`);
+                        textLines.push(`${node.prediction}`); // Show final prediction for leaf nodes
+                    } else {
+                        textLines.push(node.splitOn || 'Root'); // Show attribute to split on or 'Root'
+                    }
+                    // Show purity counts (Yes/No instances)
+                    const { counts } = getPurity(node.indices);
+                    textLines.push(`[${counts ? `${counts.Yes||0}Y, ${counts.No||0}N` : 'Pure'}]`);
+
+                    g.appendChild(circle);
+                    // Add each text line, vertically centered within the circle
+                    const lineHeight = 16; // Approximate height of one line of text
+                    const totalTextHeight = textLines.length * lineHeight;
+                    const startY = -totalTextHeight / 2 + lineHeight / 2; // Calculate start Y to center block of text
+
+                    textLines.forEach((line, i) => {
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.setAttribute('x', 0); // Center horizontally relative to g's translation point
+                        text.setAttribute('y', startY + i * lineHeight); // Position vertically
+                        text.setAttribute('text-anchor', 'middle'); // Center text
+                        text.setAttribute('alignment-baseline', 'middle');
+                        text.setAttribute('font-size', '13px');
+                        text.setAttribute('font-weight', (node.isLeaf && i===1) ? 'bold' : 'normal'); // Bold prediction
+                        text.textContent = line;
+                        g.appendChild(text);
+                    });
+                    treeSvg.appendChild(g);
+                });
+            }
+
+            /**
+             * Calculates the x, y positions for each node in the tree for rendering.
+             * Uses a simple layout algorithm to space nodes evenly and hierarchically.
+             * @returns {object} An object mapping node IDs to their {x, y, id} positions.
+             */
+            function calculateNodePositions() {
+                const positions = {};
+                const leafCount = {}; // To store the number of leaves under each node
+                const svgBounds = treeSvg.getBoundingClientRect(); // Get SVG drawing area dimensions
+
+                /**
+                 * Recursively counts the number of leaf nodes under a given node.
+                 * This is used to determine horizontal spacing.
+                 * @param {string} nodeId - The ID of the node to count leaves for.
+                 * @returns {number} The count of leaf nodes.
+                 */
+                function countLeaves(nodeId) {
+                    const node = state.tree[nodeId];
+                    if (node.children.length === 0) {
+                        leafCount[nodeId] = 1; // If no children, it's a leaf itself
+                        return 1;
+                    }
+                    // Sum up leaves from all children
+                    const count = node.children.reduce((sum, childId) => sum + countLeaves(childId), 0);
+                    leafCount[nodeId] = count;
+                    return count;
+                }
+                
+                // Start counting leaves from the root to get total width needed
+                const totalLeaves = countLeaves('node-0');
+                // Calculate horizontal step size based on total leaves
+                // We add 1 to totalLeaves to ensure enough spacing at the ends
+                const xStep = svgBounds.width / (totalLeaves + 1);
+                let currentLeaf = 1; // Counter to place leaf nodes sequentially
+
+                /**
+                 * Recursively sets the x, y positions for each node.
+                 * Leaf nodes are placed first, then their parents are centered above them.
+                 * @param {string} nodeId - The ID of the node to position.
+                 * @param {number} depth - The depth of the node in the tree (0 for root).
+                 */
+                function setPositions(nodeId, depth) {
+                    const node = state.tree[nodeId];
+                    // Calculate Y based on depth, centered vertically for a circle
+                    const y = (depth * (nodeDiameter + nodeGap.y)) + nodeRadius;
+
+                    let x;
+                    if (node.children.length === 0) {
+                        // If it's a leaf node, assign its X position sequentially
+                        x = currentLeaf * xStep;
+                        currentLeaf++;
+                    } else {
+                        // Recursively position children first
+                        node.children.forEach(childId => setPositions(childId, depth + 1));
+                        // Parent node's X position is the average of its first and last child's X
+                        const firstChildPos = positions[node.children[0]];
+                        const lastChildPos = positions[node.children[node.children.length - 1]];
+                        x = (firstChildPos.x + lastChildPos.x) / 2;
+                    }
+                    positions[nodeId] = { x, y, id: nodeId }; // Store the calculated position
+                }
+
+                setPositions('node-0', 0); // Start positioning from the root at depth 0
+                return positions;
+            }
+
+            /**
+             * Updates the text content of the explanation area.
+             * @param {string} text - The explanation message to display.
+             */
+            function updateExplanation(text) {
+                explanationArea.textContent = text;
+            }
+
+            // --- EVENT LISTENERS ---
+            // Event listeners are now attached inside renderControls after button creation.
+            
+            // --- INITIALIZATION ---
+            initialize(); // Initial setup when the page loads
+            window.addEventListener('resize', renderTree); // Re-render tree on window resize
+        });
+    </script>
+</body>
+</html>
